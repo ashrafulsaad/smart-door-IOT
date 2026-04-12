@@ -1,0 +1,4 @@
+{
+  "databaseURL": "https://YOUR-PROJECT-default-rtdb.YOUR-REGION.firebasedatabase.app",
+  "storageBucket": "YOUR-PROJECT.firebasestorage.app"
+}

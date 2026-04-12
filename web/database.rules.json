@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "commands": {
+      ".indexOn": ["status"]
+    },
+    "logs": {
+      ".indexOn": ["timestamp"]
+    }
+  }
+}

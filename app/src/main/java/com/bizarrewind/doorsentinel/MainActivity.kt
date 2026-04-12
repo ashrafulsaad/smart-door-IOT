@@ -6,11 +6,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.os.Environment
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -36,14 +39,15 @@ import com.bizarrewind.doorsentinel.ui.theme.DoorsentinelTheme
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
 class MainActivity : ComponentActivity() {
 
-    private val statusText   = mutableStateOf("Waiting for permissions...")
+    private val statusText    = mutableStateOf("Waiting for permissions...")
     private val ipAddressText = mutableStateOf("Fetching IP...")
-    private val logs         = mutableStateListOf<String>()
+    private val logs          = mutableStateListOf<String>()
 
     // Telemetry
     private val isConnected  = mutableStateOf(false)
@@ -51,6 +55,9 @@ class MainActivity : ComponentActivity() {
     private val humText      = mutableStateOf("--")
     private val lightText    = mutableStateOf("--")
     private var connectionTimeoutJob: Job? = null
+
+    // Gallery
+    private val photos = mutableStateListOf<File>()
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -65,9 +72,14 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Install splash screen BEFORE super.onCreate()
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        // Pre-load any existing photos from disk
+        loadExistingPhotos()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED) {
@@ -81,17 +93,37 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DoorsentinelTheme {
-                DoorSentinelScreen(
+                MainTabScreen(
                     status     = statusText.value,
                     ipAddress  = currentIp,
                     connected  = isConnected.value,
                     temp       = tempText.value,
                     humidity   = humText.value,
                     light      = lightText.value,
-                    logs       = logs
+                    logs       = logs,
+                    photos     = photos,
+                    onDeletePhoto = { file ->
+                        file.delete()
+                        photos.remove(file)
+                        addLog("🗑️ Deleted: ${file.name}")
+                    },
+                    onUploadPhoto = { file ->
+                        ServerService.manualUploadRequest?.invoke(file)
+                        addLog("☁️ Manual upload queued: ${file.name}")
+                    },
+                    onExportPhotos = { files ->
+                        exportPhotosToDownloads(files)
+                    }
                 )
             }
         }
+    }
+
+    private fun loadExistingPhotos() {
+        val dir = getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return
+        val existing = dir.listFiles { f -> f.extension.lowercase() == "jpg" }
+            ?.sortedByDescending { it.lastModified() } ?: emptyList()
+        photos.addAll(existing)
     }
 
     private fun startServer() {
@@ -107,12 +139,10 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch { statusText.value = "✅ Armed — idle" }
         }
         ServerService.onTelemetryReceived = { temp, hum, light ->
-            // Already posted to main thread inside ServerService
             tempText.value  = temp
             humText.value   = hum
             lightText.value = light
 
-            // Mark connected and reset the 5-second timeout
             isConnected.value = true
             connectionTimeoutJob?.cancel()
             connectionTimeoutJob = lifecycleScope.launch {
@@ -120,6 +150,13 @@ class MainActivity : ComponentActivity() {
                 isConnected.value = false
                 addLog("⚠️ ESP32 heartbeat lost — disconnected")
             }
+        }
+        ServerService.onPhotoSaved = { file ->
+            // Insert at top so newest photos appear first in gallery
+            lifecycleScope.launch {
+                if (!photos.contains(file)) photos.add(0, file)
+            }
+            addLog("📸 Saved: ${file.name}")
         }
 
         val intent = Intent(this, ServerService::class.java)
@@ -143,14 +180,131 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { logs.add(0, "[$ts] $message") }
     }
 
+    /**
+     * Copies [files] into the public Downloads/DoorSentinel folder.
+     * This folder is visible over USB (MTP) and in the Files app without
+     * requiring storage permission on Android 10+.
+     */
+    private fun exportPhotosToDownloads(files: List<File>) {
+        val destDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "DoorSentinel"
+        )
+        if (!destDir.exists()) destDir.mkdirs()
+
+        var copied = 0
+        files.forEach { src ->
+            try {
+                val dest = File(destDir, src.name)
+                src.copyTo(dest, overwrite = true)
+                copied++
+                addLog("📁 Exported: ${src.name}")
+            } catch (e: Exception) {
+                addLog("❌ Export failed: ${src.name} — ${e.message}")
+            }
+        }
+        Toast.makeText(
+            this,
+            if (copied > 0) "✅ $copied photo${if (copied > 1) "s" else ""} exported to Downloads/DoorSentinel"
+            else "❌ Export failed",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         stopService(Intent(this, ServerService::class.java))
     }
 }
 
+// ── Tab navigation ────────────────────────────────────────────────────────────
+
+private enum class Tab(val label: String, val icon: String) {
+    MONITOR("Monitor", "📡"),
+    PICTURES("Pictures", "📷"),
+    SETTINGS("Settings", "⚙️")
+}
+
+private val NavBarBg   = Color(0xFF000000)
+private val NavBarSel  = Color(0xFF3B82F6)
+private val NavBarUnsel= Color(0xFF6B7280)
+
+@Composable
+fun MainTabScreen(
+    status     : String,
+    ipAddress  : String,
+    connected  : Boolean,
+    temp       : String,
+    humidity   : String,
+    light      : String,
+    logs       : List<String>,
+    photos     : List<File>,
+    onDeletePhoto: (File) -> Unit,
+    onUploadPhoto: (File) -> Unit,
+    onExportPhotos: (List<File>) -> Unit
+) {
+    var selectedTab by remember { mutableStateOf(Tab.MONITOR) }
+
+    Scaffold(
+        containerColor = Color(0xFF000000),
+        bottomBar = {
+            NavigationBar(
+                containerColor = NavBarBg,
+                tonalElevation = 0.dp
+            ) {
+                Tab.values().forEach { tab ->
+                    val selected = tab == selectedTab
+                    NavigationBarItem(
+                        selected = selected,
+                        onClick  = { selectedTab = tab },
+                        icon     = {
+                            Text(
+                                tab.icon,
+                                fontSize = if (selected) 22.sp else 20.sp
+                            )
+                        },
+                        label    = {
+                            Text(
+                                tab.label,
+                                fontSize   = 10.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors   = NavigationBarItemDefaults.colors(
+                            selectedTextColor   = NavBarSel,
+                            unselectedTextColor = NavBarUnsel,
+                            indicatorColor      = NavBarSel.copy(alpha = 0.15f)
+                        )
+                    )
+                }
+            }
+        }
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding)) {
+            when (selectedTab) {
+                Tab.MONITOR  -> DoorSentinelScreen(
+                    status    = status,
+                    ipAddress = ipAddress,
+                    connected = connected,
+                    temp      = temp,
+                    humidity  = humidity,
+                    light     = light,
+                    logs      = logs
+                )
+                Tab.PICTURES -> PicturesScreen(
+                    photos         = photos,
+                    onDeletePhoto  = onDeletePhoto,
+                    onUploadPhoto  = onUploadPhoto,
+                    onExportPhotos = onExportPhotos
+                )
+                Tab.SETTINGS -> SettingsScreen()
+            }
+        }
+    }
+}
+
 // ============================================================
-//  UI COMPOSABLES
+//  Monitor screen composables (unchanged from before)
 // ============================================================
 
 @Composable
@@ -163,13 +317,13 @@ fun DoorSentinelScreen(
     light: String,
     logs: List<String>
 ) {
-    val darkBg     = Color(0xFF0D0F14)
-    val cardBg     = Color(0xFF171B22)
-    val accentBlue = Color(0xFF4A9EFF)
-    val accentGreen = Color(0xFF34D399)
-    val accentRed  = Color(0xFFFF5C5C)
-    val textPrimary = Color(0xFFE8EAF0)
-    val textSub    = Color(0xFF8B95A8)
+    val darkBg      = Color(0xFF000000)
+    val cardBg      = Color(0xFF080A0D)
+    val accentBlue  = Color(0xFF3B82F6)
+    val accentGreen = Color(0xFF90D769)
+    val accentRed   = Color(0xFFFF5C5C)
+    val textPrimary = Color(0xFFF2F3F5)
+    val textSub     = Color(0xFF9AA1AD)
 
     Surface(modifier = Modifier.fillMaxSize(), color = darkBg) {
         Column(
@@ -178,7 +332,6 @@ fun DoorSentinelScreen(
                 .systemBarsPadding()
                 .padding(horizontal = 16.dp),
         ) {
-
             Spacer(Modifier.height(12.dp))
 
             // ── HEADER ──────────────────────────────────────────
@@ -189,19 +342,15 @@ fun DoorSentinelScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         "DOOR SENTINEL",
-                        color = accentBlue,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 3.sp
+                        color = accentBlue, fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = 3.sp
                     )
                     Text(
                         "Security Monitor",
-                        color = textPrimary,
-                        fontSize = 22.sp,
+                        color = textPrimary, fontSize = 22.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                // Connection pill
                 ConnectionPill(connected = connected, accentGreen = accentGreen, accentRed = accentRed)
             }
 
@@ -213,31 +362,19 @@ fun DoorSentinelScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 TelemetryCard(
-                    modifier = Modifier.weight(1f),
-                    icon = "🌡️",
-                    label = "TEMP",
-                    value = if (temp == "--") "--" else "$temp°C",
-                    cardBg = cardBg,
-                    textPrimary = textPrimary,
-                    textSub = textSub
+                    modifier    = Modifier.weight(1f), icon = "🌡️", label = "TEMP",
+                    value       = if (temp == "--") "--" else "$temp°C",
+                    cardBg      = cardBg, textPrimary = textPrimary, textSub = textSub
                 )
                 TelemetryCard(
-                    modifier = Modifier.weight(1f),
-                    icon = "💧",
-                    label = "HUMIDITY",
-                    value = if (humidity == "--") "--" else "$humidity%",
-                    cardBg = cardBg,
-                    textPrimary = textPrimary,
-                    textSub = textSub
+                    modifier    = Modifier.weight(1f), icon = "💧", label = "HUMIDITY",
+                    value       = if (humidity == "--") "--" else "$humidity%",
+                    cardBg      = cardBg, textPrimary = textPrimary, textSub = textSub
                 )
                 TelemetryCard(
-                    modifier = Modifier.weight(1f),
-                    icon = "☀️",
-                    label = "LIGHT",
-                    value = light,
-                    cardBg = cardBg,
-                    textPrimary = textPrimary,
-                    textSub = textSub
+                    modifier    = Modifier.weight(1f), icon = "☀️", label = "LIGHT",
+                    value       = light,
+                    cardBg      = cardBg, textPrimary = textPrimary, textSub = textSub
                 )
             }
 
@@ -246,8 +383,8 @@ fun DoorSentinelScreen(
             // ── STATUS CARD ──────────────────────────────────────
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = cardBg)
+                shape    = RoundedCornerShape(16.dp),
+                colors   = CardDefaults.cardColors(containerColor = cardBg)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("SYSTEM", color = textSub, fontSize = 10.sp, letterSpacing = 2.sp)
@@ -265,9 +402,7 @@ fun DoorSentinelScreen(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         "ESP32 → http://$ipAddress:8080/trigger",
-                        color = textSub,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace
+                        color = textSub, fontSize = 10.sp, fontFamily = FontFamily.Monospace
                     )
                 }
             }
@@ -287,11 +422,9 @@ fun DoorSentinelScreen(
             Spacer(Modifier.height(6.dp))
 
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = cardBg)
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                shape    = RoundedCornerShape(16.dp),
+                colors   = CardDefaults.cardColors(containerColor = cardBg)
             ) {
                 LazyColumn(
                     modifier = Modifier.padding(12.dp),
@@ -299,11 +432,11 @@ fun DoorSentinelScreen(
                 ) {
                     items(logs) { log ->
                         Text(
-                            text = log,
-                            fontSize = 11.sp,
-                            color = if (log.contains("❌") || log.contains("⚠️")) accentRed
-                                    else if (log.contains("✅")) accentGreen
-                                    else textSub,
+                            text       = log,
+                            fontSize   = 11.sp,
+                            color      = if (log.contains("❌") || log.contains("⚠️")) accentRed
+                                         else if (log.contains("✅")) accentGreen
+                                         else textSub,
                             fontFamily = FontFamily.Monospace,
                             lineHeight = 16.sp
                         )
@@ -319,14 +452,12 @@ fun DoorSentinelScreen(
 @Composable
 fun ConnectionPill(connected: Boolean, accentGreen: Color, accentRed: Color) {
     val dotColor by animateColorAsState(
-        targetValue = if (connected) accentGreen else accentRed,
-        animationSpec = tween(600),
-        label = "connectionDot"
+        targetValue  = if (connected) accentGreen else accentRed,
+        animationSpec = tween(600), label = "connectionDot"
     )
     val bgColor by animateColorAsState(
-        targetValue = if (connected) accentGreen.copy(alpha = 0.15f) else accentRed.copy(alpha = 0.15f),
-        animationSpec = tween(600),
-        label = "connectionBg"
+        targetValue  = if (connected) accentGreen.copy(alpha = 0.15f) else accentRed.copy(alpha = 0.15f),
+        animationSpec = tween(600), label = "connectionBg"
     )
 
     Row(
@@ -337,35 +468,30 @@ fun ConnectionPill(connected: Boolean, accentGreen: Color, accentRed: Color) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(dotColor)
+            modifier = Modifier.size(8.dp).clip(CircleShape).background(dotColor)
         )
         Spacer(Modifier.width(6.dp))
         Text(
-            text = if (connected) "Connected" else "Disconnected",
-            color = dotColor,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
+            text       = if (connected) "Connected" else "Disconnected",
+            color      = dotColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold
         )
     }
 }
 
 @Composable
 fun TelemetryCard(
-    modifier: Modifier = Modifier,
-    icon: String,
-    label: String,
-    value: String,
-    cardBg: Color,
-    textPrimary: Color,
-    textSub: Color
+    modifier    : Modifier = Modifier,
+    icon        : String,
+    label       : String,
+    value       : String,
+    cardBg      : Color,
+    textPrimary : Color,
+    textSub     : Color
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBg)
+        shape    = RoundedCornerShape(16.dp),
+        colors   = CardDefaults.cardColors(containerColor = cardBg)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),

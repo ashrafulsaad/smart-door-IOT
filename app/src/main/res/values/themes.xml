@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.Intruderdetection" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Base app theme: AMOLED black, no action bar -->
+    <style name="Theme.Intruderdetection" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/black</item>
+        <item name="android:statusBarColor">@color/black</item>
+        <item name="android:navigationBarColor">@color/black</item>
+    </style>
+
+    <!-- Android 12+ Splash Screen theme -->
+    <style name="Theme.DoorSentinel.Splash" parent="Theme.SplashScreen">
+        <!-- Splash background — pure AMOLED black -->
+        <item name="windowSplashScreenBackground">@color/black</item>
+        <!-- Splash icon: the sentinel eye drawable -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
+        <!-- After splash, transition to the main app theme -->
+        <item name="postSplashScreenTheme">@style/Theme.Intruderdetection</item>
+    </style>
+
 </resources>

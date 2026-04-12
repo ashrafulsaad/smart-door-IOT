@@ -1,0 +1,9 @@
+
+Error: There was an error loading firebase.json:
+
+Parse Error in /home/vexil/AndroidStudioProjects/DoorSentinel/web/firebase.json:
+
+Unexpected token '"' at 2:3
+  "database": {}
+  ^
+File: "/home/vexil/AndroidStudioProjects/DoorSentinel/web/firebase.json"

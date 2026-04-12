@@ -1,47 +1,43 @@
 package com.bizarrewind.doorsentinel.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
+// Pure AMOLED black Material3 colour scheme — no dynamic colour
+private val AmoledColorScheme = darkColorScheme(
+    // Surfaces
+    background       = Black,
+    surface          = SurfaceDark,
+    surfaceVariant   = CardDark,
+    surfaceContainer = CardDark,
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    // Primary accent (blue)
+    primary          = AccentBlue,
+    onPrimary        = Black,
+    primaryContainer = CardDark,
+
+    // Secondary accent (green)
+    secondary        = AccentGreen,
+    onSecondary      = Black,
+
+    // Text
+    onBackground     = TextPrimary,
+    onSurface        = TextPrimary,
+    onSurfaceVariant = TextSecondary,
+
+    // Error
+    error            = androidx.compose.ui.graphics.Color(0xFFFF5C5C),
+    onError          = Black,
 )
 
 @Composable
 fun DoorsentinelTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
     MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+        colorScheme = AmoledColorScheme,
+        typography  = Typography,
+        content     = content
     )
 }

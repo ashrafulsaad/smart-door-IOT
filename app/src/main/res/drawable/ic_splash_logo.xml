@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="288"
+    android:viewportHeight="288">
+
+    <!-- Outer eye oval (left arc) -->
+    <path
+        android:pathData="M 40,144 Q 144,40 248,144"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Outer eye oval (right arc) -->
+    <path
+        android:pathData="M 248,144 Q 144,248 40,144"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Iris / aperture ring -->
+    <path
+        android:pathData="M 144,144 m -56,0 a 56,56 0 1,0 112,0 a 56,56 0 1,0 -112,0"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Aperture blade 1 -->
+    <path
+        android:pathData="M 144,88 L 172,134 L 144,144 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Aperture blade 2 -->
+    <path
+        android:pathData="M 196,108 L 180,154 L 144,144 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Aperture blade 3 -->
+    <path
+        android:pathData="M 200,164 L 152,166 L 144,144 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Aperture blade 4 -->
+    <path
+        android:pathData="M 144,200 L 116,154 L 144,144 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Aperture blade 5 -->
+    <path
+        android:pathData="M 92,180 L 108,134 L 144,144 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Aperture blade 6 -->
+    <path
+        android:pathData="M 88,120 L 136,122 L 144,144 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Pupil / centre dot -->
+    <path
+        android:pathData="M 144,144 m -10,0 a 10,10 0 1,0 20,0 a 10,10 0 1,0 -20,0"
+        android:fillColor="#FFFFFF" />
+
+</vector>

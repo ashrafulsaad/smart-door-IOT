@@ -7,5 +7,6 @@ class DoorSentinelApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         FirebaseApp.initializeApp(this)
+        SentinelPrefs.init(this)
     }
 }
